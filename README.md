@@ -60,10 +60,6 @@ FloodPhys/
 │   ├── figures/                     # confusion matrices, ROC, importance
 │   ├── maps/                        # vulnerability map (PNG + GeoTIFF)
 │   └── tables/                      # metrik_model.csv
-├── Paper/
-│   ├── main.tex                     # LaTeX source (infotel.cls)
-│   ├── main.pdf                     # compiled manuscript
-│   └── figures/                     # paper figures
 └── README.md
 ```
 
@@ -118,10 +114,6 @@ Full table: `Outputs/tables/metrik_model.csv`
 | Bencana stats | Open Data Kab. Banyumas | Open data |
 
 ---
-
-## Paper
-
-The accompanying manuscript (`Paper/main.pdf`) is formatted with the `infotel.cls` IEEE‑style template for the CENTIVE 2026 conference.
 
 ## Licence
 
