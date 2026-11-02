@@ -1,0 +1,36 @@
+# Raw rasters (too large, hosted on Google Drive)
+Dataset/DEMNAS_*.tif
+Dataset/dem_*.tif
+Dataset/worldcover_*.tif
+Dataset/worldcover_S09E108_2021.tif
+
+# Derived rasters (regenerate via preprocess.py)
+Dataset/processed/*.tif
+
+# Auxiliary raw data
+Dataset/rivers_banyumas.geojson
+Dataset/rivers_osm.json
+Dataset/rain_purwokerto_openmeteo.json
+Dataset/ckan_*.json
+Dataset/gb_adm2.json
+Dataset/hujan_bmkg_tunggulwulung_2024-11_2026-10.xlsx
+
+# Paper folder
+Paper/
+
+# Model artefacts (regenerate via Train.py)
+Program/Model/*.joblib
+
+# Vulnerability map raster
+Outputs/maps/peta_kerawanan_kelas.tif
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
