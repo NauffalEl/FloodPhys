@@ -34,6 +34,14 @@ def load_data():
     return X_tr, y_tr, X_te, y_te
 
 
+def positive_proba(model, X):
+    proba = np.asarray(model.predict_proba(X), dtype=float)
+    classes = list(np.asarray(model.classes_).ravel())
+    if 1 not in classes:
+        raise ValueError(f"kelas 1 (banjir) tidak ada di classes_={classes}")
+    return proba[:, classes.index(1)].ravel()
+
+
 def main():
     print("=" * 60)
     print("Centive26 — Model Training & Evaluation")
@@ -60,14 +68,19 @@ def main():
         joblib.dump(model, out_path)
         print(f"  Saved: {out_path}")
 
-        proba_tr = model.predict_proba(X_tr)[:, 1]
-        proba_te = model.predict_proba(X_te)[:, 1]
+        proba_tr = positive_proba(model, X_tr)
+        proba_te = positive_proba(model, X_te)
 
         thr_opt = optimal_threshold(y_tr, proba_tr)
         pred_te = (proba_te >= 0.5).astype(int)
         pred_te_opt = (proba_te >= thr_opt).astype(int)
 
+        # AUC dari seluruh test set, proba kelas flood (1), konsisten dgn ROC
+        y_te = np.asarray(y_te, dtype=int).ravel()
         auc = roc_auc_score(y_te, proba_te)
+        assert np.isfinite(auc), f"AUC non-finite untuk {name}"
+        print(f"  Test n={len(y_te)} pos={int((y_te == 1).sum())} "
+              f"neg={int((y_te == 0).sum())}")
         acc = accuracy_score(y_te, pred_te)
         f1_macro = f1_score(y_te, pred_te, average="macro", zero_division=0)
         f1_weighted = f1_score(y_te, pred_te, average="weighted", zero_division=0)

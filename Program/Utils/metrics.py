@@ -59,7 +59,15 @@ def save_metrics_table(results):
     df_res = df_res.sort_values("auc", ascending=False).reset_index(drop=True)
     metrics_path = os.path.join(TABLES_DIR, "metrik_model.csv")
     df_res.to_csv(metrics_path, index=False)
+
+    # audit: AUC harus konsisten dgn roc_auc_score di seluruh test set
+    audit_path = os.path.join(TABLES_DIR, "auc_audit.csv")
+    audit = df_res[["model", "auc"]].copy()
+    audit["source"] = "roc_auc_score(y_test, P(flood=1))"
+    audit.to_csv(audit_path, index=False)
+
     print(f"\n=== SUMMARY (sorted by AUC) ===")
     print(df_res.to_string(index=False))
     print(f"\nSaved: {metrics_path}")
+    print(f"Saved: {audit_path}")
     return df_res, metrics_path

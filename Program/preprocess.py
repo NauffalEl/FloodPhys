@@ -288,28 +288,46 @@ def calc_drainage_density(dem_path):
     return out_path
 
 # ── 7. Sample points + extract features ──
-def sample_and_extract(dem_path):
+def sample_and_extract(dem_path, buffer_m=200, n_samples_per_point=5):
     log("Sampling points and extracting features...")
     boundary = load_boundary()
 
-    
     df_pos = pd.read_csv(os.path.join(DATASET, "titik_banjir_banyumas_geo.csv"))
+    # buang duplikat lon/lat persis (35 baris -> 33 unik)
+    df_pos = df_pos.drop_duplicates(subset=["lon", "lat"]).reset_index(drop=True)
     pts_pos = [(float(r["lon"]), float(r["lat"])) for _, r in df_pos.iterrows()]
+    log(f"  {len(df_pos)} titik banjir unik (duplikat dibuang)")
 
-    
     rng = np.random.default_rng(42)
-    n_neg = len(pts_pos)  # balanced
-    minx, miny, maxx, maxy = boundary.bounds
     lat_rad = math.radians(7.45)
     mx = 111320 * math.cos(lat_rad)
     my = 110540
 
-    pos_arr = np.array([(y * my, x * mx) for x, y in pts_pos])
+    # buffer sampling: tiap titik banjir = area, ambil n_samples_per_point
+    # piksel jitter dalam radius buffer_m -> positives jauh lebih banyak
+    buf_deg = buffer_m / my
+    buf_deg_x = buffer_m / mx
+    pos_samples = []
+    for x, y in pts_pos:
+        pos_samples.append((x, y))
+        for _ in range(n_samples_per_point - 1):
+            ang = rng.uniform(0, 2 * math.pi)
+            rad = math.sqrt(rng.uniform(0, 1)) * buf_deg
+            nx = x + rad * math.cos(ang) * (buf_deg_x / buf_deg)
+            ny = y + rad * math.sin(ang)
+            if boundary.contains(Point(nx, ny)):
+                pos_samples.append((nx, ny))
+    log(f"  buffer {buffer_m} m x {n_samples_per_point} -> {len(pos_samples)} sampel positif")
+
+    # negatif proporsional, jarak >= 2 km dari SEMUA sampel positif
+    n_neg = len(pos_samples)
+    minx, miny, maxx, maxy = boundary.bounds
+    pos_arr = np.array([(y * my, x * mx) for x, y in pos_samples])
     pos_tree = cKDTree(pos_arr)
 
     pts_neg = []
     attempts = 0
-    while len(pts_neg) < n_neg and attempts < 100000:
+    while len(pts_neg) < n_neg and attempts < 200000:
         x = rng.uniform(minx, maxx)
         y = rng.uniform(miny, maxy)
         p = Point(x, y)
@@ -322,10 +340,9 @@ def sample_and_extract(dem_path):
             continue
         pts_neg.append((x, y))
         attempts += 1
-    log(f"  {len(pts_pos)} positive, {len(pts_neg)} negative points")
+    log(f"  {len(pos_samples)} positive, {len(pts_neg)} negative points")
 
-    
-    all_pts = [(x, y, 1) for x, y in pts_pos] + [(x, y, 0) for x, y in pts_neg]
+    all_pts = [(x, y, 1) for x, y in pos_samples] + [(x, y, 0) for x, y in pts_neg]
 
     
     hujan = pd.read_csv(os.path.join(DATASET, "hujan_bmkg_tunggulwulung.csv"))
@@ -378,20 +395,33 @@ def sample_and_extract(dem_path):
     return df, feat_cols
 
 # ── 8. Spatial Block Split ──
-def spatial_block_split(df, block_size=0.05, test_frac=0.2, seed=42):
+def spatial_block_split(df, block_size=0.05, test_frac=0.25, seed=42):
     log("Spatial block split...")
     df = df.copy()
     df["block_x"] = (df["lon"] / block_size).astype(int)
     df["block_y"] = (df["lat"] / block_size).astype(int)
     df["block_id"] = df["block_x"].astype(str) + "_" + df["block_y"].astype(str)
 
+    # pastikan test punya kedua kelas
+    blocks_by_class = {
+        c: set(df.loc[df["banjir"] == c, "block_id"].unique()) for c in (0, 1)
+    }
     blocks = np.array(df["block_id"].unique())
     rng = np.random.default_rng(seed)
-    rng.shuffle(blocks)
 
-    n_test = max(1, int(len(blocks) * test_frac))
-    test_blocks = set(blocks[:n_test])
-    train_blocks = set(blocks[n_test:])
+    n_test = max(2, int(len(blocks) * test_frac))
+    chosen = None
+    for _ in range(2000):
+        cand = set(rng.choice(blocks, size=min(n_test, len(blocks)), replace=False).tolist())
+        te_pos = any(b in blocks_by_class[1] for b in cand)
+        te_neg = any(b in blocks_by_class[0] for b in cand)
+        if te_pos and te_neg:
+            chosen = cand
+            break
+    if chosen is None:
+        chosen = set(rng.choice(blocks, size=min(n_test, len(blocks)), replace=False).tolist())
+    test_blocks = chosen
+    train_blocks = set(blocks.tolist()) - test_blocks
 
     df_train = df[df["block_id"].isin(train_blocks)].drop(columns=["block_x", "block_y", "block_id"])
     df_test = df[df["block_id"].isin(test_blocks)].drop(columns=["block_x", "block_y", "block_id"])

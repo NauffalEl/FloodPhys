@@ -49,11 +49,22 @@ def load_models():
 def plot_roc(models, X_te, y_te):
     fig, ax = plt.subplots(figsize=(7, 6))
     for (name, model), color in zip(models.items(), COLORS):
-        proba = model.predict_proba(X_te)[:, 1]
-        fpr, tpr, _ = roc_curve(y_te, proba)
+        proba = np.asarray(model.predict_proba(X_te)[:, 1], dtype=float).ravel()
+        y_true = np.asarray(y_te, dtype=int).ravel()
+        # satu kurva per model atas seluruh sampel test
+        fpr, tpr, _ = roc_curve(y_true, proba)
         roc_auc = auc(fpr, tpr)
-        label = f"{name} (AUC={roc_auc:.3f})"
+        # AUC report = roc_auc_score atas proba kelas flood (1), seluruh test
+        # (trapz pada fpr/tpr = identik; pakai scorer resmi sbg sumber kebenaran)
+        from sklearn.metrics import roc_auc_score as _ras
+        ras = _ras(y_true, proba)
+        assert abs(roc_auc - ras) < 1e-9, f"{name}: AUC trapz {roc_auc} != scorer {ras}"
+        # sanity: proba kelas positif harus sejajar dengan y_true
+        assert fpr.shape == tpr.shape and fpr[0] == 0.0 and fpr[-1] == 1.0
+        label = f"{name} (AUC={ras:.3f})"
         ax.plot(fpr, tpr, color=color, lw=2, label=label)
+        print(f"  ROC {name:14s} n={len(y_true)} pos={int((y_true == 1).sum())} "
+              f"neg={int((y_true == 0).sum())} AUC={ras:.4f} pts={len(fpr)}")
     ax.plot([0,1],[0,1],"k--",lw=1)
     ax.set_xlabel("False Positive Rate", fontsize=12)
     ax.set_ylabel("True Positive Rate", fontsize=12)
@@ -125,7 +136,6 @@ def plot_confusion(models, X_te, y_te):
 
 # ── 4. Peta Kerawanan ──
 def make_hazard_map(models):
-    """Predict flood probability across entire kabupaten raster → 5-class map."""
     print("Generating hazard map (this may take a moment)...")
     dem_path = os.path.join(PROCESSED, "dem_mosaic.tif")
     raster_paths = {
@@ -138,10 +148,16 @@ def make_hazard_map(models):
         "landcover":        os.path.join(DATASET, "worldcover_banyumas.tif"),
     }
 
-    # use best model = XGBoost (by F1)
-    best_name = "xgboost" if "xgboost" in models else list(models.keys())[0]
+    # model terbaik = peringkat AUC lalu F1-macro (sama dgn Train.py)
+    metrics_path = os.path.join(TABLES_DIR, "metrik_model.csv")
+    if os.path.exists(metrics_path):
+        dfm = pd.read_csv(metrics_path).sort_values(
+            ["auc", "f1_macro"], ascending=False).reset_index(drop=True)
+        best_name = dfm.iloc[0]["model"]
+    else:
+        best_name = list(models.keys())[0]
     model = models[best_name]
-    print(f"  Using model: {best_name}")
+    print(f"  Using model: {best_name} (best by AUC, then F1-macro)")
 
     # load reference raster for shape/transform
     with rasterio.open(dem_path) as ref:
